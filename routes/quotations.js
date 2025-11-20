@@ -1,0 +1,159 @@
+const express = require('express');
+const router = express.Router();
+const PDFDocument = require('pdfkit');
+const Quotation = require('../models/Quotation');
+
+router.get('/', async (req, res) => {
+  try {
+    const quotes = await Quotation.find().sort({ createdAt: -1 });
+    const data = quotes.map(q => ({
+      id: q._id,
+      quotationNo: q.quotationNo,
+      clientName: q.clientName,
+      clientContact: q.clientContact,
+      date: q.date ? new Date(q.date).toLocaleDateString('en-GB') : '',
+      grandTotal: q.grandTotal,
+      advance: q.advance,
+      remainingAmount: q.remainingAmount
+    }));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/', async (req, res) => {
+  try {
+    const { clientName, clientAddress, clientContact, items, discount = 0, advance = 0 } = req.body;
+    if (!clientName || !clientAddress || !clientContact || !items?.length) {
+      return res.status(400).json({ error: 'Missing fields' });
+    }
+
+    const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+    const netAmount = subtotal - parseFloat(discount);
+    const cgst = 0;
+    const sgst = 0;
+    const grandTotal = netAmount + cgst + sgst;
+    const remaining = grandTotal - parseFloat(advance);
+
+    const last = await Quotation.findOne().sort({ createdAt: -1 });
+    const num = last ? parseInt(last.quotationNo.split('-')[1]) + 1 : 1001;
+    const quotationNo = `Q-${num}`;
+
+    const quote = new Quotation({
+      quotationNo, clientName, clientAddress, clientContact,
+      items, subtotal, discount, netAmount, cgst, sgst, grandTotal, advance, remainingAmount: remaining
+    });
+    await quote.save();
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const buffers = [];
+    doc.on('data', chunk => buffers.push(chunk));
+    doc.on('end', () => {
+      const pdf = Buffer.concat(buffers);
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename=${quotationNo}.pdf`
+      });
+      res.end(pdf);
+    });
+
+    // === LOGO: Slightly right of center ===
+    const logoPath = 'public/logo.png';
+    const logoWidth = 300;
+    const pageWidth = doc.page.width;
+    const margin = 50;
+    const logoX = (pageWidth - margin * 2 - logoWidth) / 2 + 20; // +20 = right shift
+    const logoY = 50;
+    doc.image(logoPath, logoX, logoY, { width: logoWidth });
+    doc.y = logoY + 90; // Move below logo
+
+    // Business Info
+    doc.fontSize(10).text('618,Shreeji park society,Hightention line road,Subhanpura,Vadodara-390021 Mo.9737888669', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(16).text('INVOICE', { align: 'center' });
+    doc.moveDown();
+
+    // Client Info
+    doc.fontSize(10);
+    doc.text(`CLIENT NAME: ${clientName}`, 50, doc.y, { width: 250 });
+    doc.text(`DATE: ${new Date().toLocaleDateString('en-GB')}`, 300, doc.y, { width: 250 });
+    doc.moveDown(0.5);
+    doc.text(`ADDRESS: ${clientAddress}`, 50, doc.y, { width: 250 });
+    doc.text(`CONTACT NUMBER: ${clientContact}`, 300, doc.y, { width: 250 });
+    doc.moveDown(2);
+
+    // Items Table — NO BORDERS
+    doc.font('Helvetica-Bold');
+    doc.fontSize(10);
+    doc.text('SL', 50, doc.y, { width: 30 });
+    doc.text('Description', 85, doc.y, { width: 365 });
+    doc.text('Amount', 460, doc.y, { width: 90, align: 'right' });
+    doc.moveDown(0.5);
+
+    doc.font('Helvetica');
+    doc.fontSize(10);
+    items.forEach((item, i) => {
+      doc.text(i + 1, 50, doc.y, { width: 30 });
+      doc.text(item.description, 85, doc.y, { width: 365 });
+      doc.text(parseFloat(item.amount).toLocaleString('en-IN'), 460, doc.y, { width: 90, align: 'right' });
+      doc.moveDown();
+    });
+    doc.moveDown(1);
+
+    // Financial Summary — With padded text
+    const financials = [
+      { label: 'SUB TOTAL', value: subtotal },
+      { label: 'Less: Discount', value: discount },
+      { label: 'Net Amount', value: netAmount },
+      { label: 'CGST 9%', value: cgst },
+      { label: 'SGST 9%', value: sgst },
+      { label: 'GRAND TOTAL (inclusive of all taxes)', value: grandTotal, highlight: true },
+      { label: 'Less: Advance', value: advance },
+      { label: 'Remaining Amount', value: remaining }
+    ];
+
+    doc.font('Helvetica-Bold');
+    doc.fontSize(10);
+    doc.text('Description', 50, doc.y, { width: 300 });
+    doc.text('Amount', 350, doc.y, { width: 200, align: 'right' });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+    doc.moveDown(0.5);
+
+    doc.font('Helvetica');
+    doc.fontSize(10);
+    financials.forEach(row => {
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke(); // top border
+      doc.moveDown(0.2); // padding before text
+
+      if (row.highlight) {
+        doc.font('Helvetica-Bold');
+        doc.fillColor('#28a745');
+      }
+      doc.text(row.label, 50, doc.y, { width: 300 });
+      doc.text(row.value.toLocaleString('en-IN'), 350, doc.y, { width: 200, align: 'right' });
+      if (row.highlight) {
+        doc.font('Helvetica');
+        doc.fillColor('black');
+      }
+
+      doc.moveDown(0.2); // padding after text
+    });
+
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke(); // bottom border
+    doc.moveDown(5);
+
+    // Signature
+    doc.text('For, FURNiSURE', 400, doc.y);
+    doc.moveDown();
+    doc.text('Partners', 400, doc.y);
+
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'PDF generation failed' });
+  }
+});
+
+module.exports = router;
