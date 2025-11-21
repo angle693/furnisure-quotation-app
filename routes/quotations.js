@@ -89,13 +89,15 @@ router.post('/', async (req, res) => {
     doc.fontSize(16).text('INVOICE', { align: 'center' });
     doc.moveDown();
 
-    // Client Info
+    // ✅ CLIENT INFO WITH GST NUMBER (ALIGNED LIKE MR. HARDIK'S INVOICE)
     doc.fontSize(10);
     doc.text(`CLIENT NAME: ${clientName}`, 50, doc.y, { width: 250 });
     doc.text(`DATE: ${new Date().toLocaleDateString('en-GB')}`, 300, doc.y, { width: 250 });
     doc.moveDown(0.5);
     doc.text(`ADDRESS: ${clientAddress}`, 50, doc.y, { width: 250 });
     doc.text(`CONTACT NUMBER: ${clientContact}`, 300, doc.y, { width: 250 });
+    doc.moveDown(0.5);
+    doc.text(`GST NUMBER: 24AAKFF2184J1ZB`, 50, doc.y, { width: 500 }); // Full width
     doc.moveDown(2);
 
     // Items Table
