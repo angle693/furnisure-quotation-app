@@ -24,15 +24,24 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { clientName, clientAddress, clientContact, items, discount = 0, advance = 0 } = req.body;
+    const {
+      clientName,
+      clientAddress,
+      clientContact,
+      items,
+      discount = 0,
+      advance = 0,
+      applyGst = false
+    } = req.body;
+
     if (!clientName || !clientAddress || !clientContact || !items?.length) {
       return res.status(400).json({ error: 'Missing fields' });
     }
 
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
     const netAmount = subtotal - parseFloat(discount);
-    const cgst = 0;
-    const sgst = 0;
+    const cgst = applyGst ? parseFloat((netAmount * 0.09).toFixed(2)) : 0;
+    const sgst = applyGst ? parseFloat((netAmount * 0.09).toFixed(2)) : 0;
     const grandTotal = netAmount + cgst + sgst;
     const remaining = grandTotal - parseFloat(advance);
 
@@ -41,11 +50,23 @@ router.post('/', async (req, res) => {
     const quotationNo = `Q-${num}`;
 
     const quote = new Quotation({
-      quotationNo, clientName, clientAddress, clientContact,
-      items, subtotal, discount, netAmount, cgst, sgst, grandTotal, advance, remainingAmount: remaining
+      quotationNo,
+      clientName,
+      clientAddress,
+      clientContact,
+      items,
+      subtotal,
+      discount,
+      netAmount,
+      cgst,
+      sgst,
+      grandTotal,
+      advance,
+      remainingAmount: remaining
     });
     await quote.save();
 
+    // === PDF GENERATION ===
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const buffers = [];
     doc.on('data', chunk => buffers.push(chunk));
@@ -58,15 +79,9 @@ router.post('/', async (req, res) => {
       res.end(pdf);
     });
 
-    // === LOGO: Slightly right of center ===
-    const logoPath = 'public/logo.png';
-    const logoWidth = 300;
-    const pageWidth = doc.page.width;
-    const margin = 50;
-    const logoX = (pageWidth - margin * 2 - logoWidth) / 2 + 20; // +20 = right shift
-    const logoY = 50;
-    doc.image(logoPath, logoX, logoY, { width: logoWidth });
-    doc.y = logoY + 90; // Move below logo
+    // Logo
+    doc.image('public/logo.png', 170, 50, { width: 260 });
+    doc.y = 140;
 
     // Business Info
     doc.fontSize(10).text('618,Shreeji park society,Hightention line road,Subhanpura,Vadodara-390021 Mo.9737888669', { align: 'center' });
@@ -83,7 +98,7 @@ router.post('/', async (req, res) => {
     doc.text(`CONTACT NUMBER: ${clientContact}`, 300, doc.y, { width: 250 });
     doc.moveDown(2);
 
-    // Items Table — NO BORDERS
+    // Items Table
     doc.font('Helvetica-Bold');
     doc.fontSize(10);
     doc.text('SL', 50, doc.y, { width: 30 });
@@ -101,7 +116,7 @@ router.post('/', async (req, res) => {
     });
     doc.moveDown(1);
 
-    // Financial Summary — With padded text
+    // Financial Summary
     const financials = [
       { label: 'SUB TOTAL', value: subtotal },
       { label: 'Less: Discount', value: discount },
@@ -124,8 +139,8 @@ router.post('/', async (req, res) => {
     doc.font('Helvetica');
     doc.fontSize(10);
     financials.forEach(row => {
-      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke(); // top border
-      doc.moveDown(0.2); // padding before text
+      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
+      doc.moveDown(0.2);
 
       if (row.highlight) {
         doc.font('Helvetica-Bold');
@@ -138,10 +153,10 @@ router.post('/', async (req, res) => {
         doc.fillColor('black');
       }
 
-      doc.moveDown(0.2); // padding after text
+      doc.moveDown(0.2);
     });
 
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke(); // bottom border
+    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
     doc.moveDown(5);
 
     // Signature
