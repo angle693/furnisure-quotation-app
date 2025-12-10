@@ -24,12 +24,14 @@ router.put('/:id', async (req, res) => {
 
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
     const netAmount = subtotal - parseFloat(discount);
+    const cgst = 0;
+    const sgst = 0;
     const grandTotal = netAmount;
     const remaining = grandTotal - parseFloat(advance);
 
     const updated = await Quotation.findByIdAndUpdate(
       req.params.id,
-      { clientName, clientAddress, clientContact, items, subtotal, discount, netAmount, cgst: 0, sgst: 0, grandTotal, advance, remainingAmount: remaining },
+      { clientName, clientAddress, clientContact, items, subtotal, discount, netAmount, cgst, sgst, grandTotal, advance, remainingAmount: remaining },
       { new: true }
     );
 
@@ -51,7 +53,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// GET /api/quotations (all records)
+// GET /api/quotations
 router.get('/', async (req, res) => {
   try {
     const quotes = await Quotation.find().sort({ createdAt: -1 });
@@ -71,7 +73,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/quotations (generate PDF)
+// POST /api/quotations — EXACT MR HARDIK FORMAT
 router.post('/', async (req, res) => {
   try {
     const { clientName, clientAddress, clientContact, items, discount = 0, advance = 0 } = req.body;
@@ -81,6 +83,8 @@ router.post('/', async (req, res) => {
 
     const subtotal = items.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
     const netAmount = subtotal - parseFloat(discount);
+    const cgst = 0;
+    const sgst = 0;
     const grandTotal = netAmount;
     const remaining = grandTotal - parseFloat(advance);
 
@@ -90,7 +94,7 @@ router.post('/', async (req, res) => {
 
     const quote = new Quotation({
       quotationNo, clientName, clientAddress, clientContact,
-      items, subtotal, discount, netAmount, cgst: 0, sgst: 0, grandTotal, advance, remainingAmount: remaining
+      items, subtotal, discount, netAmount, cgst, sgst, grandTotal, advance, remainingAmount: remaining
     });
     await quote.save();
 
@@ -106,28 +110,23 @@ router.post('/', async (req, res) => {
       res.end(pdf);
     });
 
-    // Logo
-    doc.image('public/logo.png', 170, 50, { width: 260 });
-    doc.y = 140;
-
-    // Business Info
+    // Business Info (EXACT STRING FROM PDF)
     doc.fontSize(10).text('618,Shreeji park society,Hightention line road,Subhanpura,Vadodara-390021 Mo.9737888669', { align: 'center' });
     doc.moveDown();
     doc.fontSize(16).text('INVOICE', { align: 'center' });
     doc.moveDown();
 
-    // Client Info
+    // Client Info in 2 columns (EXACT MR HARDIK FORMAT)
     doc.fontSize(10);
     doc.text(`CLIENT NAME: ${clientName}`, 50, doc.y, { width: 250 });
     doc.text(`DATE: ${new Date().toLocaleDateString('en-GB')}`, 300, doc.y, { width: 250 });
-    doc.moveDown(0.5);
+    doc.moveDown();
     doc.text(`ADDRESS: ${clientAddress}`, 50, doc.y, { width: 250 });
     doc.text(`CONTACT NUMBER: ${clientContact}`, 300, doc.y, { width: 250 });
-    doc.moveDown(2);
+    doc.moveDown(10);
 
-    // Items Table
+    // Table Header
     doc.font('Helvetica-Bold');
-    doc.fontSize(10);
     doc.text('SL', 50, doc.y, { width: 30 });
     doc.text('Description', 85, doc.y, { width: 365 });
     doc.text('Amount', 460, doc.y, { width: 90, align: 'right' });
@@ -135,58 +134,28 @@ router.post('/', async (req, res) => {
     doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
     doc.moveDown(0.5);
 
+    // Items
     doc.font('Helvetica');
-    doc.fontSize(10);
     items.forEach((item, i) => {
       doc.text(i + 1, 50, doc.y, { width: 30 });
       doc.text(item.description, 85, doc.y, { width: 365 });
       doc.text(parseFloat(item.amount).toLocaleString('en-IN'), 460, doc.y, { width: 90, align: 'right' });
       doc.moveDown();
     });
-    doc.moveDown(1);
+    doc.moveDown();
 
-    // Financial Summary (NO CGST/SGST)
-    const financials = [
-      { label: 'SUB TOTAL', value: subtotal },
-      { label: 'Less: Discount', value: discount },
-      { label: 'Net Amount', value: netAmount },
-      { label: 'GRAND TOTAL (inclusive of all taxes)', value: grandTotal, highlight: true },
-      { label: 'Less: Advance', value: advance },
-      { label: 'Remaining Amount', value: remaining }
-    ];
-
-    doc.font('Helvetica-Bold');
-    doc.fontSize(10);
-    doc.text('Description', 50, doc.y, { width: 300 });
-    doc.text('Amount', 350, doc.y, { width: 200, align: 'right' });
-    doc.moveDown(0.5);
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(0.5);
-
-    doc.font('Helvetica');
-    doc.fontSize(10);
-    financials.forEach(row => {
-      doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-      doc.moveDown(0.2);
-
-      if (row.highlight) {
-        doc.font('Helvetica-Bold');
-        doc.fillColor('#28a745');
-      }
-      doc.text(row.label, 50, doc.y, { width: 300 });
-      doc.text(row.value.toLocaleString('en-IN'), 350, doc.y, { width: 200, align: 'right' });
-      if (row.highlight) {
-        doc.font('Helvetica');
-        doc.fillColor('black');
-      }
-
-      doc.moveDown(0.2);
-    });
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke();
-    doc.moveDown(1);
-
-    // New Line
-    doc.fontSize(10).text('composition taxable person, not eligible to collect tax on supplies', 50, doc.y, { width: 500 });
+    // FINANCIAL LINE — EXACT SINGLE-LINE FORMAT FROM PDF
+    doc.fontSize(10).text(
+      `SUB TOTAL ${subtotal.toLocaleString('en-IN')} ` +
+      `Less: Discount ${discount.toLocaleString('en-IN')} ` +
+      `Net Amount ${netAmount.toLocaleString('en-IN')} ` +
+      `CGST 9% ${cgst} ` +
+      `SGST 9% ${sgst} ` +
+      `GRAND TOTAL(inclusive of all taxes) ${grandTotal.toLocaleString('en-IN')} ` +
+      `Less: Advance ${advance.toLocaleString('en-IN')} ` +
+      `Remaining Amount ${remaining.toLocaleString('en-IN')}`,
+      50, doc.y, { width: 500 }
+    );
     doc.moveDown(2);
 
     // Signature
