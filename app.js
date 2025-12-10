@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const app = express();
 
 app.use(helmet());
+// ✅ FIXED: Removed trailing space in origin
 app.use(cors({
   origin: ['https://furnisure-frontend.vercel.app']
 }));
